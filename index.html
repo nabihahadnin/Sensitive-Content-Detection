@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <title>Video Library</title>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Video Library</h1>
+        <div class="video-gallery">
+            {% for video in video_data %}
+            <div class="video-item" onclick="playVideo('{{ video.url }}', '{{ video.title }}')">
+                <video id="video_{{ loop.index }}" class="video" src="{{ video.url }}" preload="metadata" muted></video>
+                <div class="video-title">{{ video.title }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Modal for Video Playback -->
+    <div id="videoModal" class="modal">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <video id="modalVideo" class="modal-content" controls>
+            <source id="modalSource" src="" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+
+    <script>
+        let sensitiveTimestamps = []; // List of sensitive timestamps
+        let alertedTimestamps = []; // Track timestamps already alerted
+
+        // Function to open the video in modal and fetch alerts
+        function playVideo(videoUrl, title) {
+            const videoElement = document.getElementById('modalVideo');
+            const sourceElement = document.getElementById('modalSource');
+
+            sourceElement.src = videoUrl;
+            videoElement.load();
+            videoElement.play();
+
+            document.getElementById('videoModal').style.display = 'block';
+
+            // Fetch sensitive timestamps
+            fetch('/get_alerts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ video_name: title })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        sensitiveTimestamps = data.alerts.sort((a, b) => a - b); // Ascending order
+                        alertedTimestamps = []; // Reset alerted timestamps
+                        monitorPlayback(videoElement);
+                    } else {
+                        console.error('Error fetching alerts:', data.message);
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Function to monitor playback and alert the user
+        function monitorPlayback(videoElement) {
+            videoElement.ontimeupdate = () => {
+                const currentTime = Math.floor(videoElement.currentTime); // Current time in seconds
+
+                sensitiveTimestamps.forEach((timestamp) => {
+                    const alertTime = timestamp - 2; // 2 seconds before the sensitive time
+
+                    // Trigger alert only if not already alerted for this session
+                    if (currentTime === alertTime && !alertedTimestamps.includes(timestamp)) {
+                        videoElement.pause(); // Pause the video
+                        alert(`Sensitive content ahead at ${timestamp} seconds`);
+                        alertedTimestamps.push(timestamp); // Mark this timestamp as alerted
+                    }
+                });
+            };
+        }
+
+        // Function to close the modal
+        function closeModal() {
+            document.getElementById('videoModal').style.display = 'none';
+            const videoElement = document.getElementById('modalVideo');
+            videoElement.pause();
+            videoElement.ontimeupdate = null; // Stop monitoring playback
+            alertedTimestamps = []; // Reset session alerts
+        }
+    </script>
+</body>
+
+</html>
